@@ -1,0 +1,364 @@
+---
+title: "DSA2101 Group Project"
+output:
+  output: html_document
+  df_print: paged
+  csl: APA 7
+---
+
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.align = "center")
+```
+
+## Energy Security
+
+Group L
+
+Name and matriculation number of team members:
+
+Name | Matriculation number
+---- | ----
+Loo Guan Yee | A0223941J
+Sun Peizhi | A0219930A
+Daryl Wang Yan | A0222790H
+Garrick Teo Chye Hao  | A0123789W
+Phoebe Tan Yan Ru | A0221957Y
+
+## Introduction
+
+The discovery of steam-driven energy drove the Industrial Revolution in the 18th century, spearheading the European countries into the sphere of influence. Currently, the European countries are interconnected with one another in the energy supply-chain network. The recent Russia-Ukraine war has sparked the question of energy security among the European countries since Russia has contributed a major(Subran et al. 2022) share of energy like oil and natural gas to European countries. This report aims to investigate: firstly, the distribution and the progress of renewable energy and secondly, the energy dependence between the European countries.
+
+## Data Description
+
+```{r}
+# Question 1
+library(tidyverse)
+library(readxl)
+library(dplyr)
+library(scales)
+library(tidytext)
+
+# Question 2
+library(dplyr)
+library(tidyverse)
+library(ggallin)
+library(scales)
+library(mapdata)
+energy_types <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-04/energy_types.csv')
+country_totals <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-08-04/country_totals.csv')
+```
+
+European Energy consists of two datasets Energy_type.csv and Country_totals.csv from Eurostat which is
+Statistical Database from the European Union. Energy_type dataset focuses on the different types of energy production in different European countries from 2016 to 2018 by splitting the energy type into 8 categories while the Country_totals dataset mainly discusses 5 categories: Total net energy production, export, import and consumption of each European country from 2016 to 2018. All 37 states in both data sets have the full information on the 8 types of energy production method and 5 sources of energies. There are few NAs as well, as the code below indicates we are missing the `country_name` for the UK for both datasets and the only critical data missing from the dataset is the 2016 energy exports for Malta. Interestingly, both datasets include data from 37 European states even though the European Union has only 27 member states (28 before the UK Brexit).
+
+```{r numOfCountry}
+# Number of countries in each data
+length(unique(energy_types$country))
+length(unique(country_totals$country))
+```
+
+```{r types}
+#breakdown of types
+# Obtain all the countries in the dataset
+unique(country_totals$type)
+unique(energy_types$type)
+```
+
+
+```{r checkData}
+# Check for countries with missing categories in the energy_types dataset
+energy_types %>% 
+  group_by(country)%>%
+  summarise(count = n()) %>%
+  filter(count != 8)
+
+# Check for countries with missing categories in the country_totals dataset
+country_totals %>% 
+  group_by(country)%>%
+  summarise(count = n()) %>%
+  filter(count != 5)
+```
+
+```{r}
+# Check for missing values in country_total dataset
+country_totals %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+```{r}
+# Check for missing values in energy_types dataset
+energy_types %>% 
+  filter_all(any_vars(is.na(.)))
+```
+
+For plots 1 and 2, we filtered rows where the level equals “Level 1”. Plot 1 gathered columns “2016” to “2018” into a single column year and made use of summary statistics, to sum up, each energy type total production in Europe every year while Plot 2 used mutation to calculate the difference between values in the “2018” and “2016” columns for each row, filtered rows for types of energy with significant changes in plot 1 and rearranged the data to extract the top and bottom few countries contributing to the change. For both plots 3 and 4 where the country_totals dataset is used, we gathered the columns `2016` to `2018` into one column, used the spread function to convert the country_total dataset into a tidyverse format,  used mutation to add the additional columns(import_ratio and net_exports) we need and used the filter function to select the recent 2018 data. We have also elected to add and change the naming of several countries(Uk, Czech Republic and Bosnia) under the `country_name` column to match with the mapdata dataset from the ggplot library to facilitate the left-joining of the data. Lastly, we would apply the summarise function to obtain the net_exports and Total net production, performed mutation to separate each European country's energy role and the absolute function to get positive net_flow.
+
+
+```{r,}
+# Plot 1 Preprocessing
+energy_types1<- energy_types %>%
+  pivot_longer(cols=starts_with("2"),names_to="year",values_to = "gigawatt_hours") %>%
+  mutate(year = as.integer(year))
+
+  
+europe_totals <- energy_types1 %>%
+  filter(level=="Level 1") %>% # filter for level 1 roles.
+  group_by(year,type) %>%
+  summarize(total_power = sum(gigawatt_hours)) %>%
+  ungroup() %>%
+  mutate(type=fct_reorder(type,total_power,sum))
+```
+
+
+```{r}
+# Plot 2 Preprocessing
+
+#Taking top 5 countries with highest differences between 2018 and 2016 values
+energy_top <- energy_types %>%
+  filter(level=="Level 1") %>% 
+  na.omit() %>%
+  rename(y2016=5) %>%
+  rename(y2017=6) %>%
+  rename (y2018=7) %>%
+  mutate(diff=y2018-y2016) %>%
+  select(c(country_name,type,diff)) %>% 
+  filter(type == c("Hydro", "Solar", "Wind", "Conventional thermal")) %>%
+  group_by(type) %>% 
+  arrange(-diff) %>% 
+  top_n(n=5)
+
+#Taking bottom 5 countries with lowest differences between 2018 and 2016 values
+energy_bottom <- energy_types %>%
+  filter(level=="Level 1") %>% 
+  na.omit() %>%
+  rename(y2016=5) %>%
+  rename(y2017=6) %>%
+  rename (y2018=7) %>%
+  mutate(diff=y2018-y2016) %>%
+  select(c(country_name,type,diff)) %>% 
+  filter(type == c("Hydro", "Solar", "Wind", "Conventional thermal")) %>%
+  group_by(type) %>% 
+  arrange(-diff) %>% 
+  top_n(n=-4)
+
+#combining both dfs into one
+energy = rbind(energy_top, energy_bottom)
+
+```
+
+
+```{r}
+# Country_Total Data-preprocessing
+
+# Convert the file into tidyverse format
+# Use the gather function
+temp = country_totals%>%
+  gather(`2016`:`2018`, key = "year", value = "Energy/ GWH",na.rm = TRUE)
+
+df2 = temp %>%
+  spread(key = type, value = `Energy/ GWH`)
+
+# We will need to perform name change under country_name, this is important for our plot later
+
+df2[7,2] = "Bosnia and Herzegovina"
+df2[8,2] = "Bosnia and Herzegovina"
+df2[9,2] = "Bosnia and Herzegovina"
+
+df2[19,2] = "Czech Republic"
+df2[20,2] = "Czech Republic"
+df2[21,2] = "Czech Republic"
+
+df2[109, 2] = "UK"
+df2[110, 2] = "UK"
+df2[111, 2] = "UK"
+
+# Add the following columns ratio of import to total net production and net imports
+df2 = mutate(df2, import_ratio = Imports / `Total net production`)
+df2 = mutate(df2, net_exports = Exports - Imports)
+
+# Filter for 2018 data
+df2.2018 = filter(df2, year == 2018)
+```
+
+
+```{r}
+# Plot 4 Preprocessing
+
+# map_data is located inside the ggplot2 library
+mapdata = map_data("world",df2.2018$country_name)
+
+# Change the column name region in the mapdata to country_name
+names(mapdata)[names(mapdata) == "region"] = "country_name"
+
+mapdata1 = left_join(mapdata, df2.2018, by="country_name") 
+
+# filter the data now
+mapdata2 = mapdata1 %>% filter(!is.na(mapdata1$net_export))
+
+# obtain the dataframe with average coordinates
+test = group_by(mapdata2,country_name)
+mapdata3 = summarise(test, country, long = mean(long), lat = mean(lat), 
+                     net_exports = mean(net_exports),
+                     import_ratio = mean(import_ratio),
+                     `Energy supplied`= mean(`Energy supplied`),
+                     `Total net production` = mean(`Total net production`))
+
+# Remove the duplicate rows
+mapdata3 = unique(mapdata3)
+
+# Implement the boolean function column to allocate role for plot 4 later
+mapdata3 = mutate(mapdata3, Status = case_when(net_exports >= 0 ~ "net exporter",
+                                               net_exports < 0 ~ "net importer"))
+
+# Implement the absolute column for energy flow
+mapdata3 = mutate(mapdata3, net_flow = abs(net_exports))
+```
+
+
+## What is the European Countries current distribution and progress on renewable energy?
+
+### Introduction
+
+Non-renewable energy such as fossil fuels, natural gas and oil has a long replenishment time that is not within the human lifespan. The pursuit of renewable energy is essential to ensure energy sustainability and long-term energy security. Currently, European countries are transitioning towards renewable energy through several environmental policies (Goldman, 2022)(COM/2010/06039). For question 1, we will be adapting the dataset “energy_types” by removing rows with energy types “Other” and “Pumped hydro power”, since it was not stated if they constitute renewable or non-renewable energy. We intend to investigate the changes in the production of renewable or non-renewable energies and countries with major production changes.
+
+### Methodology
+
+Renewable and Non-Renewable energy comes in many different types. We must display different energy types to see the temporal variation in each energy type production quantity over the 3 years. Multiple Line graphs corresponding to different energy types were used for the first plot, with the total power production in gigawatts on the y-axis and the years on the x-axis. Line graphs are useful as they could show multiple data variables and temporal trends very clearly. They help to monitor the progress in the energy production of each energy type and make a possible prediction about its movement in the future.
+
+We will also investigate the countries responsible mainly for driving the changes in their energy production. Hence, we had chosen the main energy types with significant changes in production quantity, which are Hydro, Wind, Solar and Conventional Thermal Energy. To make our plots concise, we filtered out the top and bottom few countries that contributed significant differences in energy production of the individual energies across the span of 3 years. We had visualised the information using centralised horizontal bar plots as it can accentuate the positive or negative differences of the different countries effectively. These make the comparison easier to understand.
+
+### Visualizations
+
+#### Plot 1
+```{r Plot 1}
+plot1 <- europe_totals %>%
+  ggplot(aes(year,total_power)) +
+  geom_line() +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Year", y = "Total power production (gigawatt-hours)", title="Change in total power production in Europe from 2016 to 2018") +
+  facet_wrap(~type,scales="free_y") + 
+  geom_point() +
+  scale_x_continuous(breaks = c(2016,2017,2018))
+
+plot1
+```
+
+#### Plot 2
+```{r Plot 2}
+ggplot(energy, aes(reorder_within(country_name, diff, list(diff)), diff,  fill=ifelse(diff<0, 'green', 'red'))) +
+  geom_col(position= "dodge")+
+  scale_x_reordered() +
+  facet_wrap(~type, scales = "free_y") + 
+  labs(x = "Countries", y = "Countries with top differences between 2018 and 2016 Total Net Energy Production (GWH)") +  
+  coord_flip() + 
+  theme(legend.position = "none")
+```
+
+
+### Discussions
+
+We can conclude that Europe is increasing its production of renewable energy and decreasing its production of energy using conventional thermal means. For example, France has a major decrease in conventional thermal energy production and a huge increase in the production of wind energy(plot 1), as France is slowly switching towards more renewable forms of energy. This is consistent with the period when France increased its wind power capacity and energy production(TCP, 2017) due to the installation of new wind turbines in transiting toward renewable energy production. The production of energy is not very volatile and less random. We postulate that the European countries have taken proactive steps to anticipate future energy demands to safeguard their energy security. Hence, we are confident that European countries are generally making progress toward renewable energy. 
+
+There was an absolute increase in geothermal, solar, wind and other energy production while there was a decrease in hydro, nuclear, and conventional thermal energy production. When looking at Europe as a whole, the main countries driving the changes in production quantities are huge enough to offset the less impactful counter changes in the other countries. For example, France and Bosnia and Herzegovina have contributed to a huge decrease in the use of conventional thermal energy compared to the minute increase in the use of said energy by the other European countries. Likewise, in 2018 relative to 2016, Ukraine and Albania increased their use of hydro energy the most, the same for Italy and Denmark solar, and the same for France and Finland wind. Moving forward, the general trend is to switch towards more renewable and sustainable energy sources. 
+
+We also noticed that Portugal and Finland(Plot2) had increased their conventional energy production while Austria had decreased their solar energy production. We proposed 2 reasons: Firstly, the renewable energy profitability is sensitive (Heshmati & Abolhosseini, 2017) to the conventional energy price and the low oil prices in the 2016 to 2018 period may have caused stagnation in progress toward alternative energy. Secondly, the high infrastructure costs, the need for transfer of technology and the training of skilled operators result in space and time constraints that will deter the countries from switching toward more renewable sources of energy. This implies that these European Countries' efforts toward renewable energy could not be observed within the limited 3 years.
+
+## How dependent are the European countries on external energy?
+
+### Introduction
+
+The energy dependency focuses on exports, imports, and total supplied energy from Country_Total.CSV. Energy dependency describes reliance on imports to satisfy energy needs, but they are volatile to current events – like oil price spikes from the Ukraine-Russia Conflict. Hence, lower reliance on energy imports provides greater energy security against undesirable world events.Furthermore, by exploring the countries’ energy transactions, we can study the ties of dependency between European nations.
+
+### Methodology
+
+We use plot 3 to investigate the external energy dependencies of European countries. Intuitively, countries with higher total net production of energy are more self-sufficient and less reliant on imports, and vice versa. We have decided to bring in both the absolute import and import ratio of a country relative to its total consumption, in order to give the readers not only an understanding of the absolute amount of import but also in the context of specific countries. Plot 3 is a scatter plot with multiple size plots, each of which will show a country’s ratio of imports against the total net production of energy. Then, the size plots will be plotted on a scatter plot to discover the relationship between countries’ import ratio and their respective total net energy productions, with the best fit line will be used to depict the general trend between the import ratio and the total net energy.
+
+We use plot 4 to consider the effect of a state’s consumption on its import and export decision, and subsequently the overall energy dynamics in Europe.  Since the energy dynamics consist of both exporters and importers, the geospatial representation of each country is essential to discovering the energy dynamics. Therefore, plot 4 uses a data map that consists of 4 variables: Total Energy supplied, the role of each country in the energy market, size of each country's respective exports/imports. The data map also explores the relationship between each country's role and size of exports/imports with each country’s total energy supplied.
+
+### Visualizations
+
+#### Plot 3
+```{r Plot 3}
+ggplot(data = df2.2018, mapping = aes(x = `Total net production`, y = Imports)) +
+  geom_point(color = "black", mapping = aes(size = import_ratio), alpha = 0.3) + 
+  geom_smooth(method = "loess", na.rm = TRUE) +
+  geom_text(aes(x = `Total net production`, y = Imports, label = country), nudge_x = 0.05, size = 2.5) +
+  scale_x_log10(labels = comma) + # Remove scientific notation
+  scale_y_log10() +
+  ylim(0, 32000) +
+  labs(size = 
+         "Ratio of \nImported Energy \nto Total Energy\nSupplied", 
+       title = "Scatterplot Between Net Energy Production and Energy Imports",
+       y = "Imports (GWH)",
+       x = "Total Net Production (GWH)")
+  
+```
+
+#### Plot 4
+```{r Plot 4}
+ggplot(mapdata2, aes(x = long, y = lat)) +
+  geom_polygon(aes(group = group, fill = `Energy supplied`), 
+               color = "white", alpha = 0.70) + # Plot the countries with fills
+  geom_text(aes(label = country), 
+            data = mapdata3, 
+            size = 2.3, 
+            color = 'black',  
+            nudge_x = 2) + # Plot the countries label
+  geom_point(aes(size = net_flow, colour = Status),
+             data = mapdata3, 
+             alpha = 0.5) + # plot the size plot for net energy flow
+  scale_color_manual(values = c("Blue","Red")) +
+  scale_size_continuous(name = "Net Flow") +
+  scale_fill_gradient(low = "Light Green", 
+                      high = "Dark Green", 
+                      name = "Energy Supplied (GWH)", 
+                      labels = comma) +
+  ylim(32,72) + # Ensure that European countries are in the middle of plot 4
+  labs(title = "Net Energy flow and Total Energy produced By each European Country") +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        rect = element_blank())
+
+```
+
+
+### Discussions
+
+Firstly, the size of the energy imports ratio decreases as the total net production increases. This is consistent with the intuition mentioned earlier. Not only do the larger countries have more electricity to supply the local market but they also have a cost advantage. France is a top nuclear energy producer (IAEA, 2020)(plot 3) and its energy accounts for 70% of electricity production (World Nuclear Association, 2022). The standardisation and economies of scale(SEFN, 2018) could lower nuclear energy costs, making their electricity more competitive in local markets, causing France to import less energy, while being a crucial stakeholder in exporting to other countries.
+
+Secondly, total net production correlates positively with the absolute production amount in plot 3. We proposed 3 reasons: firstly, increased imports could be caused by increased energy consumption; concurrently, the high total net production might cause increased consumption. Secondly, the energy roles among the European countries are sporadic – each country likely has autonomy in its energy policy. Lastly, geographical locations might affect the country's role, such as Luxembourg – located near Germany and France(plot 4) – with an import ratio of 4 times(plot 3). Furthermore, the proximity to major electricity exporters Germany, France, and Norway has caused the UK to be a net importer, reinforcing our claim that the increase in electricity import is caused by various factors.
+
+Thirdly, a regional divide of energy supplied is evident in plot 4, where the Baltic, Balkan, Scandinavian, Lowland, Benelux and Eastern Europe states have smaller consumptions compared to most Western European states. For example, Poland and Germany have the same land area, yet different consumption. We postulate that the population size affects consumption, where a smaller population size causes smaller consumption. Electricity also corresponds to the country’s economic size (Hoo, 2015), evidenced by the economic powerhouses Germany and France(coloured in dark green). However, the energy supplied has little correlation with net electricity imports, implying that the European energy market is free.
+
+
+## References
+
+2022 International Atomic Energy Agency (IAEA). (2022, April 9). Nuclear share of electricity generation in 2020. PRIS. Retrieved April 10, 2022, from https://pris.iaea.org/PRIS/WorldStatistics/NuclearShareofElectricityGeneration.aspx 
+
+EU Com. (2022). Renewable energy targets. Energy. Retrieved April 16, 2022, from https://energy.ec.europa.eu/topics/renewable-energy/renewable-energy-directive-targets-and-rules/renewable-energy-targets_en
+
+French Nuclear Energy Society. (2020, April). The cost of new nuclear power plants in France. French nuclear power in the European Energy System - SFEN. Retrieved April 10, 2022, from https://www.sfen.org/wp-content/uploads/2020/04/EN-French-nuclear-power-in-the-european-energy-system-SFEN.pdf 
+
+Goldman Sachs. (2022). The power shift: Europe's road to renewables. Goldman Sachs. Retrieved April 16, 2022, from https://www.goldmansachs.com/insights/pages/infographics/european-renewables/ 
+
+Heshmati , A., &amp; Abolhosseini, S. (2017). The political economy of Clean Energy Transitions. Oxford Scholarship Online, 2–26. https://doi.org/10.1093/oso/9780198802242.001.0001 
+
+Iimi, A. (2003). Economies of scale in power generation, transmission and distribution: integration or unbundling? Retrieved April 10, 2022, from https://www.iaee.org/documents/Mexico/Economies%20of%20scale%20in%20power_IAEE_Presentation%20Atsushi%20Iimi.pdf 
+
+Mock, T., &amp; Scherer, C. (2020, August 4). European energy Dataset. rfordatascience/tidytuesday. Retrieved April 17, 2022, from https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-08-04/readme.md 
+
+Subran, L., Boata, A., &amp; Kuhanathan, A. (2022, March 4). The (energy) price of war for European households. Corporate. Retrieved April 17, 2022, from https://www.allianz-trade.com/en_global/news-insights/economic-insights/energy-prices-household-income-squeeze.html 
+
+TCP. (2017). Wind Energy in France. IEA Wind TCP. Retrieved April 17, 2022, from https://iea-wind.org/about-iea-wind-tcp/membership/members/france/#:~:text=During%202017%2C%20France%20broke%20its,since%202016%2C%20totaling%2022.6%20TWh 
+
+World Nuclear Association. (2022, March). Nuclear Power in France. Nuclear Power in France | French Nuclear Energy - World Nuclear Association. Retrieved April 10, 2022, from https://world-nuclear.org/information-library/country-profiles/countries-a-f/france.aspx#:~:text=France%20derives%20about%2070%25%20of,generation%20to%2050%25%20by%202025 
+
+Yoo, S.-H. (2005). Electricity consumption and economic growth: Evidence from Korea. Energy Policy, 33(12), 1627–1632. https://doi.org/10.1016/j.enpol.2004.02.002 
