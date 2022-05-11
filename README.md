@@ -1,4 +1,4 @@
-# EuropeanEnergy
+# EuropeanEnergy Data Visualisation
 
 ## Introduction
 
